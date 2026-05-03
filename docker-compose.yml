@@ -1,0 +1,221 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: krisha_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - krisha_pg_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - krisha-net
+
+  airflow-init:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    image: krisha_dwh/airflow:3.0.2
+    container_name: krisha_airflow_init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &airflow-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-apiserver:8080/execution/"
+      AIRFLOW__API__BASE_URL: "http://localhost:8081"
+      AIRFLOW__API__HOST: "0.0.0.0"
+      AIRFLOW__API__PORT: "8080"
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_SECRET_KEY}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres:5432/${AIRFLOW_DB}
+      AIRFLOW_CONN_KRISHA_PG: postgres://${KRISHA_DB_USER}:${KRISHA_DB_PASSWORD}@postgres:5432/${KRISHA_DB}
+      KRISHA_DB: ${KRISHA_DB}
+      KRISHA_DB_USER: ${KRISHA_DB_USER}
+      KRISHA_DB_PASSWORD: ${KRISHA_DB_PASSWORD}
+      KRISHA_USER_AGENT: ${KRISHA_USER_AGENT}
+      KRISHA_RATE_LIMIT_RPS: ${KRISHA_RATE_LIMIT_RPS}
+      KRISHA_FETCH_DAILY_LIMIT: ${KRISHA_FETCH_DAILY_LIMIT}
+    user: "${AIRFLOW_UID}:0"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/scripts:/opt/airflow/scripts
+      - ./dbt:/opt/dbt
+      - krisha_airflow_logs:/opt/airflow/logs
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -e
+        airflow db migrate
+        airflow pools set krisha_fetch 4 "Krisha fetch slots" || true
+    networks:
+      - krisha-net
+
+  airflow-apiserver:
+    image: krisha_dwh/airflow:3.0.2
+    container_name: krisha_airflow_apiserver
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment: *airflow-env
+    user: "${AIRFLOW_UID}:0"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/scripts:/opt/airflow/scripts
+      - ./dbt:/opt/dbt
+      - krisha_airflow_logs:/opt/airflow/logs
+    ports:
+      - "8081:8080"
+    command: api-server
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/v2/version || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - krisha-net
+
+  airflow-scheduler:
+    image: krisha_dwh/airflow:3.0.2
+    container_name: krisha_airflow_scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment: *airflow-env
+    user: "${AIRFLOW_UID}:0"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/scripts:/opt/airflow/scripts
+      - ./dbt:/opt/dbt
+      - krisha_airflow_logs:/opt/airflow/logs
+    command: scheduler
+    networks:
+      - krisha-net
+
+  airflow-dag-processor:
+    image: krisha_dwh/airflow:3.0.2
+    container_name: krisha_airflow_dag_processor
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment: *airflow-env
+    user: "${AIRFLOW_UID}:0"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/scripts:/opt/airflow/scripts
+      - ./dbt:/opt/dbt
+      - krisha_airflow_logs:/opt/airflow/logs
+    command: dag-processor
+    networks:
+      - krisha-net
+
+  dbt-dv:
+    build:
+      context: .
+      dockerfile: Dockerfile.dbt
+    image: krisha_dwh/dbt:1.0
+    container_name: krisha_dbt_dv
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DBT_PROJECT_DIR: /dbt
+      DBT_PROFILES_DIR: /dbt
+      KRISHA_PG_HOST: postgres
+      KRISHA_PG_PORT: "5432"
+      KRISHA_DB: ${KRISHA_DB}
+      KRISHA_DB_USER: ${KRISHA_DB_USER}
+      KRISHA_DB_PASSWORD: ${KRISHA_DB_PASSWORD}
+    volumes:
+      - ./dbt:/dbt
+      - krisha_dbt_dv_target:/dbt/target
+      - krisha_dbt_dv_logs:/dbt/logs
+    ports:
+      - "8082:8080"
+    networks:
+      - krisha-net
+
+  dbt:
+    build:
+      context: .
+      dockerfile: Dockerfile.semantic
+    image: krisha_dwh/semantic:1.0
+    container_name: krisha_dbt
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &dbt-env
+      DBT_PROJECT_DIR: /dbt
+      DBT_PROFILES_DIR: /dbt
+      KRISHA_PG_HOST: postgres
+      KRISHA_PG_PORT: "5432"
+      KRISHA_DB: ${KRISHA_DB}
+      KRISHA_DB_USER: ${KRISHA_DB_USER}
+      KRISHA_DB_PASSWORD: ${KRISHA_DB_PASSWORD}
+      MF_TIMEOUT_SEC: "180"
+    volumes:
+      - ./dbt:/dbt
+      - krisha_dbt_target:/dbt/target
+      - krisha_dbt_logs:/dbt/logs
+    entrypoint: ["bash", "-lc", "tail -f /dev/null"]
+    networks:
+      - krisha-net
+
+  semantic-api:
+    image: krisha_dwh/semantic:1.0
+    container_name: krisha_semantic_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dbt:
+        condition: service_started
+    environment: *dbt-env
+    volumes:
+      - ./dbt:/dbt
+      - krisha_dbt_target:/dbt/target
+      - krisha_dbt_logs:/dbt/logs
+    ports:
+      - "8090:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - krisha-net
+
+volumes:
+  krisha_pg_data:
+  krisha_airflow_logs:
+  krisha_dbt_target:
+  krisha_dbt_logs:
+  krisha_dbt_dv_target:
+  krisha_dbt_dv_logs:
+
+networks:
+  krisha-net:
+    name: krisha-net

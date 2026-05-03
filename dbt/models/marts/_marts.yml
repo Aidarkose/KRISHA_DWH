@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: listings_current
+    description: "Текущее состояние активных + неактивных объявлений (dim + последняя версия SCD2)."
+    columns:
+      - name: listing_id
+        description: "PK объявления"
+        tests:
+          - unique
+          - not_null
+      - name: price_kzt
+        description: "Текущая цена (NULL, если SCD2 не записал ни одной версии)"
+      - name: status
+        description: "active / sold / removed / unknown"
+
+  - name: listing_price_events
+    description: "Каждая версия SCD2 как событие смены цены/статуса с lag-разницей."
+    columns:
+      - name: listing_id
+      - name: valid_from
+        tests:
+          - not_null

@@ -1,0 +1,87 @@
+metrics:
+  # ----- простые метрики -----
+  - name: listings_count
+    label: "Кол-во активных объявлений"
+    type: simple
+    type_params:
+      measure: listings_cnt
+    filter: |
+      {{ Dimension('listing__status') }} = 'active'
+
+  - name: avg_price
+    label: "Средняя цена (KZT)"
+    type: simple
+    type_params:
+      measure: avg_price_kzt
+    filter: |
+      {{ Dimension('listing__status') }} = 'active'
+
+  - name: median_price
+    label: "Медианная цена (KZT)"
+    type: simple
+    type_params:
+      measure: median_price_kzt
+    filter: |
+      {{ Dimension('listing__status') }} = 'active'
+
+  - name: max_price
+    label: "Максимальная цена (KZT)"
+    type: simple
+    type_params:
+      measure: max_price_kzt
+    filter: |
+      {{ Dimension('listing__status') }} = 'active'
+
+  # ----- wrapper-метрики, нужны для ratio ниже (numerator/denominator ссылаются на metric, не на measure) -----
+  - name: total_price_kzt
+    label: "Сумма цен (KZT)"
+    type: simple
+    type_params:
+      measure: total_price_kzt
+
+  - name: total_area_m2
+    label: "Сумма площадей (м²)"
+    type: simple
+    type_params:
+      measure: total_area_m2
+
+  # ----- ratio метрика: цена за квадрат -----
+  - name: avg_price_per_m2
+    label: "Средняя цена за м² (KZT)"
+    description: "SUM(price) / SUM(area), считает только активные с площадью > 10 м²"
+    type: ratio
+    type_params:
+      numerator:
+        name: total_price_kzt
+        filter: |
+          {{ Dimension('listing__status') }} = 'active'
+          AND {{ Dimension('listing__deal_type') }} = 'sale'
+      denominator:
+        name: total_area_m2
+        filter: |
+          {{ Dimension('listing__status') }} = 'active'
+          AND {{ Dimension('listing__deal_type') }} = 'sale'
+
+  # ----- метрика на ивентах SCD2 -----
+  - name: price_decreases
+    label: "Кол-во снижений цены"
+    type: simple
+    type_params:
+      measure: price_decreases_cnt
+
+  - name: price_increases
+    label: "Кол-во повышений цены"
+    type: simple
+    type_params:
+      measure: price_increases_cnt
+
+  # ----- производная метрика: чистая ценовая активность -----
+  - name: net_price_movements
+    label: "Снижения − повышения цены"
+    description: "Положительное число = больше снижений, чем повышений."
+    type: derived
+    type_params:
+      expr: "price_decreases - price_increases"
+      metrics:
+        - name: price_decreases
+        - name: price_increases

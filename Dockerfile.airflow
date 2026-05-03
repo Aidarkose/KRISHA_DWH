@@ -1,0 +1,23 @@
+FROM apache/airflow:3.0.2-python3.12
+
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        libxml2-dev \
+        libxslt1-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+USER airflow
+
+RUN pip install --no-cache-dir \
+        "apache-airflow-providers-postgres==6.0.0" \
+        "psycopg2-binary==2.9.9" \
+        "httpx[http2]==0.27.2" \
+        "tenacity==9.0.0" \
+        "selectolax==0.3.21" \
+        "lxml==5.3.0" \
+        "python-dateutil==2.9.0.post0" \
+        "dbt-core==1.9.1" \
+        "dbt-postgres==1.9.0"

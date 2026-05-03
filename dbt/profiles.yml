@@ -1,0 +1,19 @@
+# Профиль работает в двух контекстах:
+#  - host (VS Code dbt Power User, ручной запуск из ~/KRISHA_DWH/dbt):
+#    дефолты ниже => localhost:5433/krisha_dwh/krisha/krisha_secret_2026
+#  - docker (krisha_dbt / krisha_airflow_*): env vars из docker-compose.yml
+#    переопределяют host/port/user/password/dbname на postgres:5432/...
+krisha_dwh:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('KRISHA_PG_HOST', 'localhost') }}"
+      port: "{{ env_var('KRISHA_PG_PORT', '5433') | int }}"
+      user: "{{ env_var('KRISHA_DB_USER', 'krisha') }}"
+      password: "{{ env_var('KRISHA_DB_PASSWORD', 'krisha_secret_2026') }}"
+      dbname: "{{ env_var('KRISHA_DB', 'krisha_dwh') }}"
+      schema: marts
+      threads: 4
+      keepalives_idle: 0
+      sslmode: prefer

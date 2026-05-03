@@ -1,0 +1,80 @@
+semantic_models:
+  - name: listings
+    description: "Семантическая модель: текущее состояние объявлений krisha.kz"
+    model: ref('listings_current')
+    defaults:
+      agg_time_dimension: posted_day
+
+    entities:
+      - name: listing
+        type: primary
+        expr: listing_id
+
+    dimensions:
+      - name: city_name
+        type: categorical
+      - name: district_name
+        type: categorical
+      - name: complex_name
+        type: categorical
+      - name: deal_type
+        type: categorical
+        description: "sale / rent_long / rent_short"
+      - name: property_type
+        type: categorical
+      - name: rooms
+        type: categorical
+      - name: building_type
+        type: categorical
+      - name: renovation
+        type: categorical
+      - name: seller_type
+        type: categorical
+      - name: status
+        type: categorical
+      - name: posted_day
+        type: time
+        type_params:
+          time_granularity: day
+        expr: posted_at
+      - name: first_seen_day
+        type: time
+        type_params:
+          time_granularity: day
+        expr: first_seen_at
+
+    measures:
+      - name: listings_cnt
+        description: "Кол-во объявлений"
+        agg: count
+        expr: listing_id
+      - name: total_price_kzt
+        description: "Сумма цен"
+        agg: sum
+        expr: price_kzt
+      - name: total_area_m2
+        description: "Сумма площадей"
+        agg: sum
+        expr: area_total_m2
+      - name: avg_price_kzt
+        description: "Средняя цена"
+        agg: average
+        expr: price_kzt
+      - name: max_price_kzt
+        agg: max
+        expr: price_kzt
+      - name: min_price_kzt
+        agg: min
+        expr: price_kzt
+      - name: median_price_kzt
+        description: "Медианная цена через PERCENTILE_CONT(0.5)"
+        agg: percentile
+        agg_params:
+          percentile: 0.5
+          use_discrete_percentile: false
+          use_approximate_percentile: false
+        expr: price_kzt
+      - name: avg_price_per_m2_kzt
+        description: "Среднее значение колонки price_per_m2_kzt"
+        agg: average
+        expr: price_per_m2_kzt

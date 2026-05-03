@@ -1,0 +1,127 @@
+● Готово. DV выстроен и работает идемпотентно. Итоги и краткий гайд:
+                                            
+  Что добавлено                                        
+                                                               
+  Файлы:                                                    
+  - Dockerfile.dbt — минимальный образ dbt-core 1.9 + dbt-postgres (без сломанного
+  metricflow).                                                                    
+  - docker-compose.yml: новый сервис dbt-dv (контейнер krisha_dbt_dv, image
+  krisha_dwh/dbt:1.0).                                                                       
+  - dbt/packages.yml → Datavault-UK/automate_dv 0.11.5 (наследник dbtVault).
+  - dbt/models/utils/metricflow_time_spine.sql + _utils.yml — обязательная для dbt 1.9 модель
+   спайна.                                                                                   
+  - dbt/models/dv/stage/stg_dv_listings.sql и stg_dv_price_history.sql — staging с           
+  automate_dv.stage() (LOAD_DATETIME / RECORD_SOURCE / hashed_columns).                      
+  - dbt/models/dv/raw_vault/: hub_listing, hub_city, lnk_listing_city,                       
+  sat_listing_attributes, sat_listing_price + _dv.yml (тесты unique/not_null/relationships). 
+                                                                                             
+  Попутные фиксы существующего кода (без них dbt parse падал):                               
+  - metrics.yml: добавлены wrapper simple-метрики total_price_kzt/total_area_m2.             
+  - sem_price_events.yml: добавлен primary_entity: price_event.                              
+                                                                                             
+  Состояние данных                                                                           
+                                                                                             
+  ┌─────────────────────────────────┬───────┐                                                
+  │             Таблица             │ Строк │                                              
+  ├─────────────────────────────────┼───────┤                                                
+  │ marts_dv.hub_listing            │ 193   │
+  ├─────────────────────────────────┼───────┤                                                
+  │ marts_dv.hub_city               │ 44    │                                              
+  ├─────────────────────────────────┼───────┤                                                
+  │ marts_dv.lnk_listing_city       │ 193   │
+  ├─────────────────────────────────┼───────┤                                                
+  │ marts_dv.sat_listing_attributes │ 193   │                                              
+  ├─────────────────────────────────┼───────┤
+  │ marts_dv.sat_listing_price      │ 193   │
+  └─────────────────────────────────┴───────┘                                                
+   
+  Идемпотентность: повторный dbt run --select dv → INSERT 0 0 на всех incremental-моделях.   
+                                                                                           
+  Как пользоваться                                                                           
+                                                                                           
+  Поднять стек:                                                                              
+  cd /home/daurena2609/KRISHA_DWH
+  docker compose build dbt-dv                                                                
+  docker compose up -d postgres dbt-dv                                                       
+                                      
+  Установить пакеты + проверить подключение:                                                 
+  docker exec krisha_dbt_dv dbt deps  --profiles-dir /dbt                                    
+  docker exec krisha_dbt_dv dbt debug --profiles-dir /dbt
+                                                                                             
+  Полный билд DV (хабы + линки + сателлиты + 22 теста):                                      
+  docker exec krisha_dbt_dv dbt build --select dv --profiles-dir /dbt                        
+                                                                                             
+  Только запустить (без тестов):                                                             
+  docker exec krisha_dbt_dv dbt run --select dv --profiles-dir /dbt                        
+                                                                                             
+  Полная пере-загрузка (truncate + insert):                                                
+  docker exec krisha_dbt_dv dbt run --select dv --full-refresh --profiles-dir /dbt           
+                                                                                           
+  Только тесты:                                                                              
+  docker exec krisha_dbt_dv dbt test --select dv --profiles-dir /dbt                       
+                                                                                             
+  Граф зависимостей:                                                                         
+  docker exec krisha_dbt_dv dbt list --select +sat_listing_price --profiles-dir /dbt
+                                                                                             
+  Точечно построить один satellite:                                                          
+  docker exec krisha_dbt_dv dbt run --select sat_listing_attributes+ --profiles-dir /dbt     
+                                                                                             
+  Как добавить новую DV-сущность через AutomateDV                                            
+                                                                                           
+  1. В stg_dv_listings.sql (или новый stage-файл) добавить hash-колонку — automate_dv.stage()
+   сам соберёт MD5 из набора:                                                              
+  hashed_columns:                                                                            
+    HK_NEW_ENTITY:                                                                           
+      - "natural_key_column"
+  2. Создать hub_<entity>.sql — макрос automate_dv.hub(src_pk, src_nk, src_ldts, src_source, 
+  source_model).                                                                             
+  3. Если нужны связи — lnk_<a>_<b>.sql через automate_dv.link(src_pk, src_fk=[…], …).       
+  4. Описательные атрибуты — sat_<entity>.sql через automate_dv.sat(src_pk, src_hashdiff,    
+  src_payload=[…], src_ldts, src_source, source_model). Hashdiff в stage (is_hashdiff: true) 
+  автоматически даёт SCD2.                                                                   
+  5. Прописать тесты в _dv.yml (unique/not_null на хеш-ключ, relationships на хабы).         
+                                                                                             
+  Загрузка DAG-ами при этом не меняется — пока Airflow → stg.listings →                      
+  marts.fact_listing_price_history идёт штатно, dbt-DV над ним строится автоматически по     
+  расписанию (можно повесить отдельный DAG, дёргающий dbt run --select dv). 
+
+
+  Полезное в UI                                                                              
+  
+  - Selector в lineage (внизу): +sat_listing_price+ — все upstream и downstream от sat.      
+  tag:dv сработает, если повесить теги. Полная грамматика:                                 
+  https://docs.getdbt.com/reference/node-selection/syntax                                    
+  - Карточка модели показывает: SQL (compiled + raw), columns с описаниями из _dv.yml,     
+  статистику (rowcount/bytes из catalog.json), upstream/downstream, проходящие тесты.        
+  - Sources (stg.listings, marts.dim_listing, marts.fact_listing_price_history) — отдельная
+  вкладка.                                                                                   
+  - Macros → раздел automate_dv покажет все 828 макросов dbtVault                          
+  (hub/link/sat/effectivity_sat/xts/...).                                                    
+                                                                                           
+  Команды документации                                                                       
+                                                                                           
+  # Перегенерить (после правки моделей или yml)
+  docker exec krisha_dbt_dv dbt docs generate --profiles-dir /dbt                            
+                                                                                             
+  # Перезапуск сервера (если правили --static html)                                          
+  docker exec krisha_dbt_dv pkill -f "dbt docs serve" || true                                
+  docker exec -d krisha_dbt_dv bash -lc \                                                    
+    "dbt docs serve --host 0.0.0.0 --port 8080 --no-browser --profiles-dir /dbt >          
+  /tmp/dbt_docs.log 2>&1"                                                                    
+                                                                                           
+  # Один HTML-файл (без сервера) — удобно для шаринга                                        
+  docker exec krisha_dbt_dv dbt docs generate --static --profiles-dir /dbt                 
+  # результат: dbt/target/static_index.html (всё inline, можно открыть локально)             
+                                                                                             
+  Что показывается из нашего DV                                                              
+                                                                                             
+  После docs generate в lineage уже видны все 10 моделей, 29 тестов и 2 семантических модели.
+   Для каждой DV-модели:                                                                   
+  - описание из _dv.yml                                                                      
+  - колонки HK_* / HD_* с типом bytea                                                      
+  - тесты unique/not_null на хеш-ключи
+  - relationships от линков и сателлитов к хабам — это рисуется как ребро в графе            
+                                                                                             
+  Если хотите, могу обогатить документацию: добавить description к каждой колонке payload в  
+  сателлитах, теги (+tags: ['dv','raw_vault']) для удобной фильтрации в UI и разделить       
+  lineage по слоям.   

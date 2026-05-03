@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+airflow/logs/
+data/
+*.log
+.DS_Store
+.idea/
+.vscode/

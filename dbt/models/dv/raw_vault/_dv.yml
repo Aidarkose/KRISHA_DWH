@@ -1,0 +1,80 @@
+version: 2
+
+models:
+  - name: hub_listing
+    description: "Hub: бизнес-ключ объявления krisha (listing_id)."
+    columns:
+      - name: HK_LISTING
+        description: "MD5 hash key объявления (PK)."
+        tests:
+          - unique
+          - not_null
+      - name: listing_id
+        tests:
+          - not_null
+
+  - name: hub_city
+    description: "Hub: бизнес-ключ города (city_name; city_id отсутствует в источнике)."
+    columns:
+      - name: HK_CITY
+        description: "MD5 hash key города (PK)."
+        tests:
+          - unique
+          - not_null
+      - name: city_name
+        tests:
+          - not_null
+
+  - name: lnk_listing_city
+    description: "Link: связь объявления и города."
+    columns:
+      - name: HK_LISTING_CITY
+        description: "MD5 hash key пары (listing_id, city_name) (PK)."
+        tests:
+          - unique
+          - not_null
+      - name: HK_LISTING
+        tests:
+          - not_null
+          - relationships:
+              to: ref('hub_listing')
+              field: HK_LISTING
+      - name: HK_CITY
+        tests:
+          - not_null
+          - relationships:
+              to: ref('hub_city')
+              field: HK_CITY
+
+  - name: sat_listing_attributes
+    description: "Satellite: атрибуты объявления (комнаты/площадь/этажи/...). SCD2 по HD_LISTING_ATTRS."
+    columns:
+      - name: HK_LISTING
+        tests:
+          - not_null
+          - relationships:
+              to: ref('hub_listing')
+              field: HK_LISTING
+      - name: HD_LISTING_ATTRS
+        description: "MD5 hashdiff атрибутов; меняется → новая версия."
+        tests:
+          - not_null
+      - name: LOAD_DATETIME
+        tests:
+          - not_null
+
+  - name: sat_listing_price
+    description: "Satellite: цена и статус объявления. SCD2 поверх stg.listings через hashdiff HD_LISTING_PRICE (AutomateDV)."
+    columns:
+      - name: HK_LISTING
+        tests:
+          - not_null
+          - relationships:
+              to: ref('hub_listing')
+              field: HK_LISTING
+      - name: HD_LISTING_PRICE
+        tests:
+          - not_null
+      - name: LOAD_DATETIME
+        tests:
+          - not_null

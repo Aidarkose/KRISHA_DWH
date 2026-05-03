@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: stg
+    description: "Снапшот нормализованных полей из распарсенного HTML."
+    schema: stg
+    tables:
+      - name: listings
+        description: "Текущая версия каждого объявления; loaded by Airflow krisha_parse_listings."
+        loaded_at_field: source_fetched_at
+        columns:
+          - name: listing_id
+            tests:
+              - unique
+              - not_null
+          - name: source_fetched_at
+            tests:
+              - not_null

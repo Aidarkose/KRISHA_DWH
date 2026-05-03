@@ -1,0 +1,15 @@
+name: automate_dv
+version: 0.11.5
+require-dbt-version: [ ">=1.0.0", "<3.0.0" ]
+config-version: 2
+
+model-paths: [ "models" ]
+analysis-paths: [ "analyses" ]
+test-paths: [ "tests" ]
+seed-paths: [ "seeds" ]
+macro-paths: [ "macros" ]
+docs-paths: [ "docs" ]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"

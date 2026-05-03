@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    DBT_PROJECT_DIR=/dbt \
+    DBT_PROFILES_DIR=/dbt
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+    'dbt-core==1.9.1' \
+    'dbt-postgres==1.9.0'
+
+WORKDIR /dbt
+
+CMD ["bash", "-lc", "tail -f /dev/null"]

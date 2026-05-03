@@ -1,0 +1,44 @@
+semantic_models:
+  - name: price_events
+    description: "Семантическая модель: каждая запись SCD2 как событие смены цены/статуса"
+    model: ref('listing_price_events')
+    defaults:
+      agg_time_dimension: event_day
+    primary_entity: price_event
+
+    entities:
+      - name: listing
+        type: foreign
+        expr: listing_id
+
+    dimensions:
+      - name: city_name
+        type: categorical
+      - name: district_name
+        type: categorical
+      - name: deal_type
+        type: categorical
+      - name: status
+        type: categorical
+      - name: event_day
+        type: time
+        type_params:
+          time_granularity: day
+        expr: valid_from
+
+    measures:
+      - name: price_events_cnt
+        description: "Кол-во событий SCD2"
+        agg: count
+        expr: listing_id
+      - name: price_decreases_cnt
+        description: "Кол-во событий со снижением цены"
+        agg: sum
+        expr: "CASE WHEN price_delta_kzt < 0 THEN 1 ELSE 0 END"
+      - name: price_increases_cnt
+        description: "Кол-во событий с повышением цены"
+        agg: sum
+        expr: "CASE WHEN price_delta_kzt > 0 THEN 1 ELSE 0 END"
+      - name: avg_price_delta_kzt
+        agg: average
+        expr: price_delta_kzt
